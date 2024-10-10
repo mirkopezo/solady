@@ -1,8 +1,45 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.13;
+
+// This file is auto-generated.
+
+/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+/*                          STRUCTS                           */
+/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+/// @dev An enumerable address set in storage.
+struct AddressSet {
+    uint256 _spacer;
+}
+
+/// @dev An enumerable bytes32 set in storage.
+struct Bytes32Set {
+    uint256 _spacer;
+}
+
+/// @dev An enumerable uint256 set in storage.
+struct Uint256Set {
+    uint256 _spacer;
+}
+
+/// @dev An enumerable int256 set in storage.
+struct Int256Set {
+    uint256 _spacer;
+}
+
+/// @dev An enumerable uint8 set in storage. Useful for enums.
+struct Uint8Set {
+    uint256 data;
+}
+
+using EnumerableSetLib for AddressSet global;
+using EnumerableSetLib for Bytes32Set global;
+using EnumerableSetLib for Uint256Set global;
+using EnumerableSetLib for Int256Set global;
+using EnumerableSetLib for Uint8Set global;
 
 /// @notice Library for managing enumerable sets in storage.
-/// @author Solady (https://github.com/vectorized/solady/blob/main/src/utils/EnumerableSetLib.sol)
+/// @author Solady (https://github.com/vectorized/solady/blob/main/src/utils/g/EnumerableSetLib.sol)
 ///
 /// @dev Note:
 /// In many applications, the number of elements in an enumerable set is small.
@@ -58,35 +95,6 @@ library EnumerableSetLib {
     ///     let lazyLength := sload(not(rootSlot))
     /// ```
     uint256 private constant _ENUMERABLE_WORD_SET_SLOT_SEED = 0x18fb5864;
-
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                          STRUCTS                           */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    /// @dev An enumerable address set in storage.
-    struct AddressSet {
-        uint256 _spacer;
-    }
-
-    /// @dev An enumerable bytes32 set in storage.
-    struct Bytes32Set {
-        uint256 _spacer;
-    }
-
-    /// @dev An enumerable uint256 set in storage.
-    struct Uint256Set {
-        uint256 _spacer;
-    }
-
-    /// @dev An enumerable int256 set in storage.
-    struct Int256Set {
-        uint256 _spacer;
-    }
-
-    /// @dev An enumerable uint8 set in storage. Useful for enums.
-    struct Uint8Set {
-        uint256 data;
-    }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                     GETTERS / SETTERS                      */

@@ -471,6 +471,21 @@ contract LibCloneTest is SoladyTest {
         }
     }
 
+    function testCreateDeterministicCloneWithImmutableArgs(bytes32 salt) public {
+        bytes memory args = _randomBytes();
+        if (args.length > _CLONES_ARGS_MAX_LENGTH) {
+            vm.expectRevert();
+            this.createDeterministicClone(address(this), args, salt);
+            return;
+        }
+        address instance = this.createDeterministicClone(address(this), args, salt);
+        _checkArgsOnClone(instance, args);
+        _checkBehavesLikeProxy(instance);
+        if (_randomChance(32)) {
+            this.createDeterministicClone(address(this), args, salt);
+        }
+    }
+
     function testCloneDeterministicWithImmutableArgs() public {
         testCloneDeterministicWithImmutableArgs(bytes32(0));
     }
@@ -992,11 +1007,36 @@ contract LibCloneTest is SoladyTest {
         );
     }
 
-    function testERC1967ConstantBootstrap(address implementation, bytes32 salt) public {
-        address bootstrap = LibClone.constantERC1967BootstrapAddress();
-        assertEq(LibClone.constantERC1967Bootstrap(), bootstrap);
+    function testERC1967BootstrapInitCode(address authorizedUpgrader) public {
+        bytes memory c = LibClone.initCodeERC1967Bootstrap(authorizedUpgrader);
+        bytes memory expected = abi.encodePacked(
+            hex"603d80600a3d393df3fe3373",
+            authorizedUpgrader,
+            hex"0338573d357f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc55"
+        );
+        assertEq(c, expected);
+    }
+
+    function testERC1967BootstrapGuard(address implementation, bytes32 salt) public {
+        address authorizedUpgrader = _randomNonZeroAddress();
+        address bootstrap = LibClone.erc1967Bootstrap(authorizedUpgrader);
+        address instance = this.deployDeterministicERC1967I(bootstrap, salt);
+        assertEq(LibClone.implementationOf(instance), bootstrap);
         if (_randomChance(2)) {
-            assertEq(LibClone.constantERC1967Bootstrap(), bootstrap);
+            vm.prank(authorizedUpgrader);
+            LibClone.bootstrapERC1967(instance, implementation);
+            assertEq(LibClone.implementationOf(instance), implementation);
+        } else {
+            vm.expectRevert();
+            LibClone.bootstrapERC1967(instance, implementation);
+        }
+    }
+
+    function testERC1967Bootstrap(address implementation, bytes32 salt) public {
+        address bootstrap = LibClone.predictDeterministicAddressERC1967Bootstrap();
+        assertEq(LibClone.erc1967Bootstrap(), bootstrap);
+        if (_randomChance(2)) {
+            assertEq(LibClone.erc1967Bootstrap(), bootstrap);
         }
 
         address instance;
@@ -1275,6 +1315,21 @@ contract LibCloneTest is SoladyTest {
         instance = LibClone.cloneDeterministic(_brutalized(implementation), args, salt);
         address predicted =
             LibClone.predictDeterministicAddress(implementation, args, salt, address(this));
+        assertEq(instance, predicted);
+    }
+
+    function createDeterministicClone(address implementation, bytes memory args, bytes32 salt)
+        external
+        maybeBrutalizeMemory
+        returns (address instance)
+    {
+        address predicted =
+            LibClone.predictDeterministicAddress(implementation, args, salt, address(this));
+        bool alreadyDeployed = predicted.code.length != 0;
+        bool deployed;
+        (deployed, instance) =
+            LibClone.createDeterministicClone(_brutalized(implementation), args, salt);
+        assertEq(alreadyDeployed, deployed);
         assertEq(instance, predicted);
     }
 

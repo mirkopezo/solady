@@ -44,6 +44,9 @@ abstract contract ERC20 {
     /// @dev The permit has expired.
     error PermitExpired();
 
+    /// @dev The allowance of Permit2 is fixed at infinity.
+    error Permit2AllowanceIsFixedAtInfinity();
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                           */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -106,12 +109,20 @@ abstract contract ERC20 {
         0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
 
     /// @dev `keccak256("1")`.
-    bytes32 private constant _VERSION_HASH =
+    /// If you need to use a different version, override `_versionHash`.
+    bytes32 private constant _DEFAULT_VERSION_HASH =
         0xc89efdaa54c0f20c7adf612882df0950f5a951637e0307cdcb4c672f298b8bc6;
 
     /// @dev `keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")`.
     bytes32 private constant _PERMIT_TYPEHASH =
         0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
+
+    /// @dev The canonical Permit2 address.
+    /// For signature-based allowance granting for single transaction ERC20 `transferFrom`.
+    /// To enable, override `_givePermit2InfiniteAllowance()`.
+    /// [Github](https://github.com/Uniswap/permit2)
+    /// [Etherscan](https://etherscan.io/address/0x000000000022D473030F116dDEE9F6B43aC78BA3)
+    address internal constant _PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       ERC20 METADATA                       */
@@ -157,6 +168,9 @@ abstract contract ERC20 {
         virtual
         returns (uint256 result)
     {
+        if (_givePermit2InfiniteAllowance()) {
+            if (spender == _PERMIT2) return type(uint256).max;
+        }
         /// @solidity memory-safe-assembly
         assembly {
             mstore(0x20, spender)
@@ -170,6 +184,16 @@ abstract contract ERC20 {
     ///
     /// Emits a {Approval} event.
     function approve(address spender, uint256 amount) public virtual returns (bool) {
+        if (_givePermit2InfiniteAllowance()) {
+            /// @solidity memory-safe-assembly
+            assembly {
+                // If `spender == _PERMIT2 && amount != type(uint256).max`.
+                if iszero(or(xor(shr(96, shl(96, spender)), _PERMIT2), iszero(not(amount)))) {
+                    mstore(0x00, 0x3f68539a) // `Permit2AllowanceIsFixedAtInfinity()`.
+                    revert(0x1c, 0x04)
+                }
+            }
+        }
         /// @solidity memory-safe-assembly
         assembly {
             // Compute the allowance slot and store the amount.
@@ -232,45 +256,91 @@ abstract contract ERC20 {
     /// Emits a {Transfer} event.
     function transferFrom(address from, address to, uint256 amount) public virtual returns (bool) {
         _beforeTokenTransfer(from, to, amount);
-        /// @solidity memory-safe-assembly
-        assembly {
-            let from_ := shl(96, from)
-            // Compute the allowance slot and load its value.
-            mstore(0x20, caller())
-            mstore(0x0c, or(from_, _ALLOWANCE_SLOT_SEED))
-            let allowanceSlot := keccak256(0x0c, 0x34)
-            let allowance_ := sload(allowanceSlot)
-            // If the allowance is not the maximum uint256 value.
-            if add(allowance_, 1) {
-                // Revert if the amount to be transferred exceeds the allowance.
-                if gt(amount, allowance_) {
-                    mstore(0x00, 0x13be252b) // `InsufficientAllowance()`.
+        // Code duplication is for zero-cost abstraction if possible.
+        if (_givePermit2InfiniteAllowance()) {
+            /// @solidity memory-safe-assembly
+            assembly {
+                let from_ := shl(96, from)
+                if iszero(eq(caller(), _PERMIT2)) {
+                    // Compute the allowance slot and load its value.
+                    mstore(0x20, caller())
+                    mstore(0x0c, or(from_, _ALLOWANCE_SLOT_SEED))
+                    let allowanceSlot := keccak256(0x0c, 0x34)
+                    let allowance_ := sload(allowanceSlot)
+                    // If the allowance is not the maximum uint256 value.
+                    if not(allowance_) {
+                        // Revert if the amount to be transferred exceeds the allowance.
+                        if gt(amount, allowance_) {
+                            mstore(0x00, 0x13be252b) // `InsufficientAllowance()`.
+                            revert(0x1c, 0x04)
+                        }
+                        // Subtract and store the updated allowance.
+                        sstore(allowanceSlot, sub(allowance_, amount))
+                    }
+                }
+                // Compute the balance slot and load its value.
+                mstore(0x0c, or(from_, _BALANCE_SLOT_SEED))
+                let fromBalanceSlot := keccak256(0x0c, 0x20)
+                let fromBalance := sload(fromBalanceSlot)
+                // Revert if insufficient balance.
+                if gt(amount, fromBalance) {
+                    mstore(0x00, 0xf4d678b8) // `InsufficientBalance()`.
                     revert(0x1c, 0x04)
                 }
-                // Subtract and store the updated allowance.
-                sstore(allowanceSlot, sub(allowance_, amount))
+                // Subtract and store the updated balance.
+                sstore(fromBalanceSlot, sub(fromBalance, amount))
+                // Compute the balance slot of `to`.
+                mstore(0x00, to)
+                let toBalanceSlot := keccak256(0x0c, 0x20)
+                // Add and store the updated balance of `to`.
+                // Will not overflow because the sum of all user balances
+                // cannot exceed the maximum uint256 value.
+                sstore(toBalanceSlot, add(sload(toBalanceSlot), amount))
+                // Emit the {Transfer} event.
+                mstore(0x20, amount)
+                log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, shr(96, from_), shr(96, mload(0x0c)))
             }
-            // Compute the balance slot and load its value.
-            mstore(0x0c, or(from_, _BALANCE_SLOT_SEED))
-            let fromBalanceSlot := keccak256(0x0c, 0x20)
-            let fromBalance := sload(fromBalanceSlot)
-            // Revert if insufficient balance.
-            if gt(amount, fromBalance) {
-                mstore(0x00, 0xf4d678b8) // `InsufficientBalance()`.
-                revert(0x1c, 0x04)
+        } else {
+            /// @solidity memory-safe-assembly
+            assembly {
+                let from_ := shl(96, from)
+                // Compute the allowance slot and load its value.
+                mstore(0x20, caller())
+                mstore(0x0c, or(from_, _ALLOWANCE_SLOT_SEED))
+                let allowanceSlot := keccak256(0x0c, 0x34)
+                let allowance_ := sload(allowanceSlot)
+                // If the allowance is not the maximum uint256 value.
+                if not(allowance_) {
+                    // Revert if the amount to be transferred exceeds the allowance.
+                    if gt(amount, allowance_) {
+                        mstore(0x00, 0x13be252b) // `InsufficientAllowance()`.
+                        revert(0x1c, 0x04)
+                    }
+                    // Subtract and store the updated allowance.
+                    sstore(allowanceSlot, sub(allowance_, amount))
+                }
+                // Compute the balance slot and load its value.
+                mstore(0x0c, or(from_, _BALANCE_SLOT_SEED))
+                let fromBalanceSlot := keccak256(0x0c, 0x20)
+                let fromBalance := sload(fromBalanceSlot)
+                // Revert if insufficient balance.
+                if gt(amount, fromBalance) {
+                    mstore(0x00, 0xf4d678b8) // `InsufficientBalance()`.
+                    revert(0x1c, 0x04)
+                }
+                // Subtract and store the updated balance.
+                sstore(fromBalanceSlot, sub(fromBalance, amount))
+                // Compute the balance slot of `to`.
+                mstore(0x00, to)
+                let toBalanceSlot := keccak256(0x0c, 0x20)
+                // Add and store the updated balance of `to`.
+                // Will not overflow because the sum of all user balances
+                // cannot exceed the maximum uint256 value.
+                sstore(toBalanceSlot, add(sload(toBalanceSlot), amount))
+                // Emit the {Transfer} event.
+                mstore(0x20, amount)
+                log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, shr(96, from_), shr(96, mload(0x0c)))
             }
-            // Subtract and store the updated balance.
-            sstore(fromBalanceSlot, sub(fromBalance, amount))
-            // Compute the balance slot of `to`.
-            mstore(0x00, to)
-            let toBalanceSlot := keccak256(0x0c, 0x20)
-            // Add and store the updated balance of `to`.
-            // Will not overflow because the sum of all user balances
-            // cannot exceed the maximum uint256 value.
-            sstore(toBalanceSlot, add(sload(toBalanceSlot), amount))
-            // Emit the {Transfer} event.
-            mstore(0x20, amount)
-            log3(0x20, 0x20, _TRANSFER_EVENT_SIGNATURE, shr(96, from_), shr(96, mload(0x0c)))
         }
         _afterTokenTransfer(from, to, amount);
         return true;
@@ -283,6 +353,11 @@ abstract contract ERC20 {
     /// @dev For more performance, override to return the constant value
     /// of `keccak256(bytes(name()))` if `name()` will never change.
     function _constantNameHash() internal view virtual returns (bytes32 result) {}
+
+    /// @dev If you need a different value, override this function.
+    function _versionHash() internal view virtual returns (bytes32 result) {
+        result = _DEFAULT_VERSION_HASH;
+    }
 
     /// @dev Returns the current nonce for `owner`.
     /// This value is used to compute the signature for EIP-2612 permit.
@@ -309,9 +384,20 @@ abstract contract ERC20 {
         bytes32 r,
         bytes32 s
     ) public virtual {
+        if (_givePermit2InfiniteAllowance()) {
+            /// @solidity memory-safe-assembly
+            assembly {
+                // If `spender == _PERMIT2 && value != type(uint256).max`.
+                if iszero(or(xor(shr(96, shl(96, spender)), _PERMIT2), iszero(not(value)))) {
+                    mstore(0x00, 0x3f68539a) // `Permit2AllowanceIsFixedAtInfinity()`.
+                    revert(0x1c, 0x04)
+                }
+            }
+        }
         bytes32 nameHash = _constantNameHash();
         //  We simply calculate it on-the-fly to allow for cases where the `name` may change.
         if (nameHash == bytes32(0)) nameHash = keccak256(bytes(name()));
+        bytes32 versionHash = _versionHash();
         /// @solidity memory-safe-assembly
         assembly {
             // Revert if the block timestamp is greater than `deadline`.
@@ -331,7 +417,7 @@ abstract contract ERC20 {
             // Prepare the domain separator.
             mstore(m, _DOMAIN_TYPEHASH)
             mstore(add(m, 0x20), nameHash)
-            mstore(add(m, 0x40), _VERSION_HASH)
+            mstore(add(m, 0x40), versionHash)
             mstore(add(m, 0x60), chainid())
             mstore(add(m, 0x80), address())
             mstore(0x2e, keccak256(m, 0xa0))
@@ -376,12 +462,13 @@ abstract contract ERC20 {
         bytes32 nameHash = _constantNameHash();
         //  We simply calculate it on-the-fly to allow for cases where the `name` may change.
         if (nameHash == bytes32(0)) nameHash = keccak256(bytes(name()));
+        bytes32 versionHash = _versionHash();
         /// @solidity memory-safe-assembly
         assembly {
             let m := mload(0x40) // Grab the free memory pointer.
             mstore(m, _DOMAIN_TYPEHASH)
             mstore(add(m, 0x20), nameHash)
-            mstore(add(m, 0x40), _VERSION_HASH)
+            mstore(add(m, 0x40), versionHash)
             mstore(add(m, 0x60), chainid())
             mstore(add(m, 0x80), address())
             result := keccak256(m, 0xa0)
@@ -494,6 +581,9 @@ abstract contract ERC20 {
 
     /// @dev Updates the allowance of `owner` for `spender` based on spent `amount`.
     function _spendAllowance(address owner, address spender, uint256 amount) internal virtual {
+        if (_givePermit2InfiniteAllowance()) {
+            if (spender == _PERMIT2) return; // Do nothing, as allowance is infinite.
+        }
         /// @solidity memory-safe-assembly
         assembly {
             // Compute the allowance slot and load its value.
@@ -503,7 +593,7 @@ abstract contract ERC20 {
             let allowanceSlot := keccak256(0x0c, 0x34)
             let allowance_ := sload(allowanceSlot)
             // If the allowance is not the maximum uint256 value.
-            if add(allowance_, 1) {
+            if not(allowance_) {
                 // Revert if the amount to be transferred exceeds the allowance.
                 if gt(amount, allowance_) {
                     mstore(0x00, 0x13be252b) // `InsufficientAllowance()`.
@@ -519,6 +609,16 @@ abstract contract ERC20 {
     ///
     /// Emits a {Approval} event.
     function _approve(address owner, address spender, uint256 amount) internal virtual {
+        if (_givePermit2InfiniteAllowance()) {
+            /// @solidity memory-safe-assembly
+            assembly {
+                // If `spender == _PERMIT2 && amount != type(uint256).max`.
+                if iszero(or(xor(shr(96, shl(96, spender)), _PERMIT2), iszero(not(amount)))) {
+                    mstore(0x00, 0x3f68539a) // `Permit2AllowanceIsFixedAtInfinity()`.
+                    revert(0x1c, 0x04)
+                }
+            }
+        }
         /// @solidity memory-safe-assembly
         assembly {
             let owner_ := shl(96, owner)
@@ -543,4 +643,17 @@ abstract contract ERC20 {
     /// @dev Hook that is called after any transfer of tokens.
     /// This includes minting and burning.
     function _afterTokenTransfer(address from, address to, uint256 amount) internal virtual {}
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          PERMIT2                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Returns whether to fix the Permit2 contract's allowance at infinity.
+    ///
+    /// This value should be kept constant after contract initialization,
+    /// or else the actual allowance values may not match with the {Approval} events.
+    /// For best performance, return a compile-time constant for zero-cost abstraction.
+    function _givePermit2InfiniteAllowance() internal view virtual returns (bool) {
+        return false;
+    }
 }

@@ -488,7 +488,7 @@ library LibClone {
             pop(staticcall(gas(), 4, add(args, 0x20), n, add(m, 0x43), n))
             mstore(add(m, 0x23), 0x5af43d82803e903d91602b57fd5bf3)
             mstore(add(m, 0x14), implementation)
-            mstore(m, add(0xfe61002d3d81600a3d39f3363d3d373d3d3d363d73, shl(0x88, n)))
+            mstore(m, add(0xfe61002d3d81600a3d39f3363d3d373d3d3d363d73, shl(136, n)))
             // Do a out-of-gas revert if `n` is greater than `0xffff - 0x2d = 0xffd2`.
             instance := create(value, add(m, add(0x0b, lt(n, 0xffd3))), add(n, 0x37))
             if iszero(instance) {
@@ -497,10 +497,9 @@ library LibClone {
             }
         }
     }
-    // 0,0x5e17b14ADd6c386305A32928F985b29bbA34Eff5, hex"01020304"
+
     /// @dev Deploys a deterministic clone of `implementation`
     /// with immutable arguments encoded in `args` and `salt`.
-
     function cloneDeterministic(address implementation, bytes memory args, bytes32 salt)
         internal
         returns (address instance)
@@ -523,13 +522,69 @@ library LibClone {
             pop(staticcall(gas(), 4, add(args, 0x20), n, add(m, 0x43), n))
             mstore(add(m, 0x23), 0x5af43d82803e903d91602b57fd5bf3)
             mstore(add(m, 0x14), implementation)
-            mstore(m, add(0xfe61002d3d81600a3d39f3363d3d373d3d3d363d73, shl(0x88, n)))
+            mstore(m, add(0xfe61002d3d81600a3d39f3363d3d373d3d3d363d73, shl(136, n)))
             // Do a out-of-gas revert if `n` is greater than `0xffff - 0x2d = 0xffd2`.
             instance := create2(value, add(m, add(0x0b, lt(n, 0xffd3))), add(n, 0x37), salt)
             if iszero(instance) {
                 mstore(0x00, 0x30116425) // `DeploymentFailed()`.
                 revert(0x1c, 0x04)
             }
+        }
+    }
+
+    /// @dev Deploys a deterministic clone of `implementation`
+    /// with immutable arguments encoded in `args` and `salt`.
+    /// This method does not revert if the clone has already been deployed.
+    function createDeterministicClone(address implementation, bytes memory args, bytes32 salt)
+        internal
+        returns (bool alreadyDeployed, address instance)
+    {
+        return createDeterministicClone(0, implementation, args, salt);
+    }
+
+    /// @dev Deploys a deterministic clone of `implementation`
+    /// with immutable arguments encoded in `args` and `salt`.
+    /// This method does not revert if the clone has already been deployed.
+    function createDeterministicClone(
+        uint256 value,
+        address implementation,
+        bytes memory args,
+        bytes32 salt
+    ) internal returns (bool alreadyDeployed, address instance) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            let m := mload(0x40)
+            let n := mload(args)
+            pop(staticcall(gas(), 4, add(args, 0x20), n, add(m, 0x43), n))
+            mstore(add(m, 0x23), 0x5af43d82803e903d91602b57fd5bf3)
+            mstore(add(m, 0x14), implementation)
+            // Do a out-of-gas revert if `n` is greater than `0xffff - 0x2d = 0xffd2`.
+            // forgefmt: disable-next-item
+            mstore(add(m, gt(n, 0xffd2)), add(0xfe61002d3d81600a3d39f3363d3d373d3d3d363d73, shl(136, n)))
+            // Compute and store the bytecode hash.
+            mstore8(0x00, 0xff) // Write the prefix.
+            mstore(0x35, keccak256(add(m, 0x0c), add(n, 0x37)))
+            mstore(0x01, shl(96, address()))
+            mstore(0x15, salt)
+            instance := keccak256(0x00, 0x55)
+            for {} 1 {} {
+                if iszero(extcodesize(instance)) {
+                    instance := create2(value, add(m, 0x0c), add(n, 0x37), salt)
+                    if iszero(instance) {
+                        mstore(0x00, 0x30116425) // `DeploymentFailed()`.
+                        revert(0x1c, 0x04)
+                    }
+                    break
+                }
+                alreadyDeployed := 1
+                if iszero(value) { break }
+                if iszero(call(gas(), instance, value, codesize(), 0x00, codesize(), 0x00)) {
+                    mstore(0x00, 0xb12d13eb) // `ETHTransferFailed()`.
+                    revert(0x1c, 0x04)
+                }
+                break
+            }
+            mstore(0x35, 0) // Restore the overwritten part of the free memory pointer.
         }
     }
 
@@ -551,7 +606,7 @@ library LibClone {
             }
             mstore(add(c, 0x37), 0x5af43d82803e903d91602b57fd5bf3)
             mstore(add(c, 0x28), implementation)
-            mstore(add(c, 0x14), add(0x61002d3d81600a3d39f3363d3d373d3d3d363d73, shl(0x88, n)))
+            mstore(add(c, 0x14), add(0x61002d3d81600a3d39f3363d3d373d3d3d363d73, shl(136, n)))
             mstore(c, add(0x37, n)) // Store the length.
             mstore(add(c, add(n, 0x57)), 0) // Zeroize the slot after the bytes.
             mstore(0x40, add(c, add(n, 0x77))) // Allocate memory.
@@ -576,7 +631,7 @@ library LibClone {
             }
             mstore(add(m, 0x23), 0x5af43d82803e903d91602b57fd5bf3)
             mstore(add(m, 0x14), implementation)
-            mstore(m, add(0x61002d3d81600a3d39f3363d3d373d3d3d363d73, shl(0x88, n)))
+            mstore(m, add(0x61002d3d81600a3d39f3363d3d373d3d3d363d73, shl(136, n)))
             hash := keccak256(add(m, 0x0c), add(n, 0x37))
         }
     }
@@ -599,7 +654,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            mstore(args, sub(extcodesize(instance), 0x2d)) // Store the length.
+            mstore(args, and(0xffffffffff, sub(extcodesize(instance), 0x2d))) // Store the length.
             extcodecopy(instance, add(args, 0x20), 0x2d, add(mload(args), 0x20))
             mstore(0x40, add(mload(args), add(args, 0x40))) // Allocate memory.
         }
@@ -614,7 +669,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            let n := sub(extcodesize(instance), 0x2d)
+            let n := and(0xffffffffff, sub(extcodesize(instance), 0x2d))
             extcodecopy(instance, add(args, 0x20), add(start, 0x2d), add(n, 0x20))
             mstore(args, mul(sub(n, start), lt(start, n))) // Store the length.
             mstore(0x40, add(args, add(0x40, mload(args)))) // Allocate memory.
@@ -639,7 +694,7 @@ library LibClone {
             extcodecopy(instance, args, add(start, 0x0d), add(d, 0x20))
             if iszero(and(0xff, mload(add(args, d)))) {
                 let n := sub(extcodesize(instance), 0x2d)
-                returndatacopy(returndatasize(), returndatasize(), shr(64, n))
+                returndatacopy(returndatasize(), returndatasize(), shr(40, n))
                 d := mul(gt(n, start), sub(d, mul(gt(end, n), sub(end, n))))
             }
             mstore(args, d) // Store the length.
@@ -1073,7 +1128,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            mstore(args, sub(extcodesize(instance), 0x3d)) // Store the length.
+            mstore(args, and(0xffffffffff, sub(extcodesize(instance), 0x3d))) // Store the length.
             extcodecopy(instance, add(args, 0x20), 0x3d, add(mload(args), 0x20))
             mstore(0x40, add(mload(args), add(args, 0x40))) // Allocate memory.
         }
@@ -1088,7 +1143,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            let n := sub(extcodesize(instance), 0x3d)
+            let n := and(0xffffffffff, sub(extcodesize(instance), 0x3d))
             extcodecopy(instance, add(args, 0x20), add(start, 0x3d), add(n, 0x20))
             mstore(args, mul(sub(n, start), lt(start, n))) // Store the length.
             mstore(0x40, add(args, add(0x40, mload(args)))) // Allocate memory.
@@ -1113,7 +1168,7 @@ library LibClone {
             extcodecopy(instance, args, add(start, 0x1d), add(d, 0x20))
             if iszero(and(0xff, mload(add(args, d)))) {
                 let n := sub(extcodesize(instance), 0x3d)
-                returndatacopy(returndatasize(), returndatasize(), shr(64, n))
+                returndatacopy(returndatasize(), returndatasize(), shr(40, n))
                 d := mul(gt(n, start), sub(d, mul(gt(end, n), sub(end, n))))
             }
             mstore(args, d) // Store the length.
@@ -1573,7 +1628,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            mstore(args, sub(extcodesize(instance), 0x52)) // Store the length.
+            mstore(args, and(0xffffffffff, sub(extcodesize(instance), 0x52))) // Store the length.
             extcodecopy(instance, add(args, 0x20), 0x52, add(mload(args), 0x20))
             mstore(0x40, add(mload(args), add(args, 0x40))) // Allocate memory.
         }
@@ -1588,7 +1643,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            let n := sub(extcodesize(instance), 0x52)
+            let n := and(0xffffffffff, sub(extcodesize(instance), 0x52))
             extcodecopy(instance, add(args, 0x20), add(start, 0x52), add(n, 0x20))
             mstore(args, mul(sub(n, start), lt(start, n))) // Store the length.
             mstore(0x40, add(mload(args), add(args, 0x40))) // Allocate memory.
@@ -1613,7 +1668,7 @@ library LibClone {
             extcodecopy(instance, args, add(start, 0x32), add(d, 0x20))
             if iszero(and(0xff, mload(add(args, d)))) {
                 let n := sub(extcodesize(instance), 0x52)
-                returndatacopy(returndatasize(), returndatasize(), shr(64, n))
+                returndatacopy(returndatasize(), returndatasize(), shr(40, n))
                 d := mul(gt(n, start), sub(d, mul(gt(end, n), sub(end, n))))
             }
             mstore(args, d) // Store the length.
@@ -1623,37 +1678,36 @@ library LibClone {
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*            CONSTANT ERC1967 BOOTSTRAP OPERATIONS           */
+    /*                ERC1967 BOOTSTRAP OPERATIONS                */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    // Note: This enables an ERC1967 proxy to be deployed at a deterministic address
-    // independent of the implementation:
+    // A bootstrap is a minimal UUPS implementation that allows an ERC1967 proxy
+    // pointing to it to be upgraded. The ERC1967 proxy can then be deployed to a
+    // deterministic address independent of the implementation:
     // ```
-    //     address bootstrap = LibClone.constantERC1967Bootstrap();
+    //     address bootstrap = LibClone.erc1967Bootstrap();
     //     address instance = LibClone.deployDeterministicERC1967(0, bootstrap, salt);
-    //     LibClone.bootstrapConstantERC1967(bootstrap, implementation);
+    //     LibClone.bootstrapERC1967(bootstrap, implementation);
     // ```
 
-    /// @dev Deploys the constant ERC1967 bootstrap if it has not been deployed.
-    function constantERC1967Bootstrap() internal returns (address bootstrap) {
-        bootstrap = constantERC1967BootstrapAddress();
+    /// @dev Deploys the ERC1967 bootstrap if it has not been deployed.
+    function erc1967Bootstrap() internal returns (address) {
+        return erc1967Bootstrap(address(this));
+    }
+
+    /// @dev Deploys the ERC1967 bootstrap if it has not been deployed.
+    function erc1967Bootstrap(address authorizedUpgrader) internal returns (address bootstrap) {
+        bytes memory c = initCodeERC1967Bootstrap(authorizedUpgrader);
+        bootstrap = predictDeterministicAddress(keccak256(c), bytes32(0), address(this));
         /// @solidity memory-safe-assembly
         assembly {
             if iszero(extcodesize(bootstrap)) {
-                mstore(0x20, 0x0894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc55)
-                mstore(0x00, 0x60258060093d393df358357f36)
-                if iszero(create2(0, 0x13, 0x2e, 0)) {
+                if iszero(create2(0, add(c, 0x20), mload(c), 0)) {
                     mstore(0x00, 0x30116425) // `DeploymentFailed()`.
                     revert(0x1c, 0x04)
                 }
             }
         }
-    }
-
-    /// @dev Returns the implementation address of the ERC1967 bootstrap for this contract.
-    function constantERC1967BootstrapAddress() internal view returns (address bootstrap) {
-        bytes32 hash = 0xfe1a42b9c571a6a8c083c94ac67b9cfd74e2582923426aa3b762e3431d717cd1;
-        bootstrap = predictDeterministicAddress(hash, bytes32(0), address(this));
     }
 
     /// @dev Replaces the implementation at `instance`.
@@ -1666,6 +1720,47 @@ library LibClone {
                 revert(0x1c, 0x04)
             }
         }
+    }
+
+    /// @dev Returns the implementation address of the ERC1967 bootstrap for this contract.
+    function predictDeterministicAddressERC1967Bootstrap() internal view returns (address) {
+        return predictDeterministicAddressERC1967Bootstrap(address(this), address(this));
+    }
+
+    /// @dev Returns the implementation address of the ERC1967 bootstrap for this contract.
+    function predictDeterministicAddressERC1967Bootstrap(
+        address authorizedUpgrader,
+        address deployer
+    ) internal pure returns (address) {
+        bytes32 hash = initCodeHashERC1967Bootstrap(authorizedUpgrader);
+        return predictDeterministicAddress(hash, bytes32(0), deployer);
+    }
+
+    /// @dev Returns the initialization code of the ERC1967 bootstrap.
+    function initCodeERC1967Bootstrap(address authorizedUpgrader)
+        internal
+        pure
+        returns (bytes memory c)
+    {
+        /// @solidity memory-safe-assembly
+        assembly {
+            c := mload(0x40)
+            mstore(add(c, 0x60), 0xca505d382bbc5500000000000000000000000000000000000000000000000000)
+            mstore(add(c, 0x40), 0x0338573d357f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3)
+            mstore(add(c, 0x20), authorizedUpgrader)
+            mstore(add(c, 0x0c), 0x603d80600a3d393df3fe3373)
+            mstore(c, 0x47)
+            mstore(0x40, add(c, 0x80))
+        }
+    }
+
+    /// @dev Returns the initialization code hash of the ERC1967 bootstrap.
+    function initCodeHashERC1967Bootstrap(address authorizedUpgrader)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(initCodeERC1967Bootstrap(authorizedUpgrader));
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -2107,7 +2202,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            mstore(args, sub(extcodesize(instance), 0x52)) // Store the length.
+            mstore(args, and(0xffffffffff, sub(extcodesize(instance), 0x52))) // Store the length.
             extcodecopy(instance, add(args, 0x20), 0x52, add(mload(args), 0x20))
             mstore(0x40, add(mload(args), add(args, 0x40))) // Allocate memory.
         }
@@ -2122,7 +2217,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            let n := sub(extcodesize(instance), 0x52)
+            let n := and(0xffffffffff, sub(extcodesize(instance), 0x52))
             extcodecopy(instance, add(args, 0x20), add(start, 0x52), add(n, 0x20))
             mstore(args, mul(sub(n, start), lt(start, n))) // Store the length.
             mstore(0x40, add(args, add(0x40, mload(args)))) // Allocate memory.
@@ -2147,7 +2242,7 @@ library LibClone {
             extcodecopy(instance, args, add(start, 0x32), add(d, 0x20))
             if iszero(and(0xff, mload(add(args, d)))) {
                 let n := sub(extcodesize(instance), 0x52)
-                returndatacopy(returndatasize(), returndatasize(), shr(64, n))
+                returndatacopy(returndatasize(), returndatasize(), shr(40, n))
                 d := mul(gt(n, start), sub(d, mul(gt(end, n), sub(end, n))))
             }
             mstore(args, d) // Store the length.
@@ -2609,7 +2704,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            mstore(args, sub(extcodesize(instance), 0x57)) // Store the length.
+            mstore(args, and(0xffffffffff, sub(extcodesize(instance), 0x57))) // Store the length.
             extcodecopy(instance, add(args, 0x20), 0x57, add(mload(args), 0x20))
             mstore(0x40, add(mload(args), add(args, 0x40))) // Allocate memory.
         }
@@ -2624,7 +2719,7 @@ library LibClone {
         /// @solidity memory-safe-assembly
         assembly {
             args := mload(0x40)
-            let n := sub(extcodesize(instance), 0x57)
+            let n := and(0xffffffffff, sub(extcodesize(instance), 0x57))
             extcodecopy(instance, add(args, 0x20), add(start, 0x57), add(n, 0x20))
             mstore(args, mul(sub(n, start), lt(start, n))) // Store the length.
             mstore(0x40, add(args, add(0x40, mload(args)))) // Allocate memory.
@@ -2649,7 +2744,7 @@ library LibClone {
             extcodecopy(instance, args, add(start, 0x37), add(d, 0x20))
             if iszero(and(0xff, mload(add(args, d)))) {
                 let n := sub(extcodesize(instance), 0x57)
-                returndatacopy(returndatasize(), returndatasize(), shr(64, n))
+                returndatacopy(returndatasize(), returndatasize(), shr(40, n))
                 d := mul(gt(n, start), sub(d, mul(gt(end, n), sub(end, n))))
             }
             mstore(args, d) // Store the length.

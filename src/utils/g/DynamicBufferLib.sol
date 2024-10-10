@@ -1,21 +1,25 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.13;
+
+// This file is auto-generated.
+
+/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+/*                          STRUCTS                           */
+/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+/// @dev Type to represent a dynamic buffer in memory.
+/// You can directly assign to `data`, and the `p` function will
+/// take care of the memory allocation.
+struct DynamicBuffer {
+    bytes data;
+}
+
+using DynamicBufferLib for DynamicBuffer global;
 
 /// @notice Library for buffers with automatic capacity resizing.
-/// @author Solady (https://github.com/vectorized/solady/blob/main/src/utils/DynamicBufferLib.sol)
+/// @author Solady (https://github.com/vectorized/solady/blob/main/src/utils/g/DynamicBufferLib.sol)
 /// @author Modified from cozyco (https://github.com/samkingco/cozyco/blob/main/contracts/utils/DynamicBuffer.sol)
 library DynamicBufferLib {
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                          STRUCTS                           */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    /// @dev Type to represent a dynamic buffer in memory.
-    /// You can directly assign to `data`, and the `p` function will
-    /// take care of the memory allocation.
-    struct DynamicBuffer {
-        bytes data;
-    }
-
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         OPERATIONS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

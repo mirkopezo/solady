@@ -29,6 +29,7 @@ The Solidity smart contracts are located in the `src` directory.
 ```ml
 accounts
 ├─ Receiver — "Receiver mixin for ETH and safe-transferred ERC721 and ERC1155 tokens"
+├─ Pod — "Minimal account to be spawned and controlled by a mothership"
 ├─ ERC1271 — "ERC1271 mixin with nested EIP-712 approach"
 ├─ ERC4337 — "Simple ERC4337 account implementation"
 ├─ ERC4337Factory — "Simple ERC4337 account factory implementation"
@@ -78,6 +79,7 @@ utils
 ├─ Multicallable — "Contract that enables a single call to call multiple methods on itself"
 ├─ GasBurnerLib — "Library for burning gas without reverting"
 ├─ SafeTransferLib — "Safe ERC20/ETH transfer lib that handles missing return values"
+├─ DynamicArrayLib — "Library for memory arrays with automatic capacity resizing"
 ├─ DynamicBufferLib — "Library for buffers with automatic capacity resizing"
 ├─ EfficientHashLib — "Library for efficiently performing keccak256 hashes"
 ├─ MetadataReaderLib — "Library for reading contract metadata robustly"
@@ -96,6 +98,7 @@ src — "Solidity smart contracts"
 test — "Foundry Forge tests"
 js — "Accompanying JavaScript helper library"
 ext — "Extra tests"
+prep — "Preprocessing scripts"
 audits — "Audit reports"
 ```
 
